@@ -8,6 +8,7 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -37,7 +38,7 @@ public class AccelerometerActivity extends Activity {
 
 	// This data structure contains the linear accelerations retrieved 
 	// by the accelerometer sensor.
-	private static List<float[]> linAccHistory = new ArrayList<float[]>();
+	private static CopyOnWriteArrayList<float[]> linAccHistory = new CopyOnWriteArrayList<float[]>();
 	
 	// This handler is used to update the GUI on separate threads
 	private Handler GUIHandler;
@@ -68,6 +69,8 @@ public class AccelerometerActivity extends Activity {
 		
 		sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
 		
+		GUIHandler = new Handler();
+		
 		compHandler = new ComputationHandler();
 		
 		if(!isExternalStorageWritable()) Log.e(TAG, "No permission to write external files!");
@@ -90,6 +93,7 @@ public class AccelerometerActivity extends Activity {
 	
 	@Override
 	protected void onResume() {
+		super.onResume();
 		Sensor accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 		if (!sensorManager.registerListener(accelerometerSensorEventListener, accelerometer, SensorManager.SENSOR_DELAY_FASTEST)) {
 			Log.w(TAG, "Couldn't register accelerometer.");
@@ -98,12 +102,13 @@ public class AccelerometerActivity extends Activity {
  
 	@Override
 	protected void onPause() {
+		super.onPause();
 		sensorManager.unregisterListener(accelerometerSensorEventListener);
 	}
 	
 	private static final class AccelerometerSensorEventListener implements SensorEventListener {
 
-		private float[] gravity = {0.0f, 0.0f, 0.0f}, linear_acceleration = {0.0f, 0.0f, 0.0f};
+		private float[] gravity = {0.0f, 0.0f, 0.0f};
 		
 		@Override
 		public void onAccuracyChanged(Sensor sensor, int accuracy) {
@@ -119,6 +124,7 @@ public class AccelerometerActivity extends Activity {
 	        // and dT, the event delivery rate
 
 	        final float alpha = 0.8f;
+	        float[] linear_acceleration = {0.0f, 0.0f, 0.0f};
 	        
 			// A low pass filter is used to retrieve the gravity values
 	        gravity[0] = alpha * gravity[0] + (1 - alpha) * event.values[0];
@@ -140,7 +146,20 @@ public class AccelerometerActivity extends Activity {
 		
 		if (linAccHistory.size() >= windowSize) {
 			
-			final List<float[]> dataToProcess = linAccHistory.subList(0, windowSize - 1);
+			//final List<float[]> dataToProcess = linAccHistory.subList(0, windowSize - 1);
+			final List<float[]> dataToProcess = new ArrayList<float[]>();
+			
+			for(int counterElement = 0; counterElement < windowSize; counterElement ++) {
+				
+				// Perform an hard copy of the linAccHistory list up to window size.
+				// The copied elements will create a window instance.
+				float[] temp = new float[3];
+				temp[0] = linAccHistory.get(counterElement)[0];
+				temp[1] = linAccHistory.get(counterElement)[1];
+				temp[2] = linAccHistory.get(counterElement)[2];
+				
+				dataToProcess.add(temp);
+			}
 			
 			// Initialize a new thread to perform the heavy computation on data..
 			Thread computationThread = new Thread() {
@@ -155,7 +174,11 @@ public class AccelerometerActivity extends Activity {
 			};
 			
 			// Discard the first windowSize / 2 items in the sliding window.
-			linAccHistory = linAccHistory.subList((int) windowSize / 2 , linAccHistory.size() - 1);
+			//linAccHistory = (CopyOnWriteArrayList<float[]>) linAccHistory.subList((int) windowSize / 2 , linAccHistory.size() - 1);
+			for(int counterElement = (int) windowSize / 2; counterElement > 0; counterElement --) {
+				
+				linAccHistory.remove(0);
+			}
 			
 			// Start the computation thread..
 			computationThread.start();
@@ -202,15 +225,15 @@ public class AccelerometerActivity extends Activity {
 							
 								case 0:		pw.println("Sliding window nr. " + ((int) resultsCounter / 3 + 1));
 											pw.println("Linear acceleration - X dimension -> Min: " + currentElement[0] + 
-													"; Max: " + currentElement[1] + "; Std Dev: " + currentElement[2] + ";");
+													";\tMax: " + currentElement[1] + ";\tStd Dev: " + currentElement[2] + ";");
 											break;
 								
 								case 1:		pw.println("Linear acceleration - Y dimension -> Min: " + currentElement[0] + 
-													"; Max: " + currentElement[1] + "; Std Dev: " + currentElement[2] + ";");
+													";\tMax: " + currentElement[1] + ";\tStd Dev: " + currentElement[2] + ";");
 											break;
 											
 								case 2:		pw.println("Linear acceleration - Z dimension -> Min: " + currentElement[0] + 
-											"; Max: " + currentElement[1] + "; Std Dev: " + currentElement[2] + ";\n");
+											";\tMax: " + currentElement[1] + ";\tStd Dev: " + currentElement[2] + ";\n");
 											break;
 							}
 							
